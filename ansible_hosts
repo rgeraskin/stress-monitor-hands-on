@@ -1,0 +1,14 @@
+[ptp:vars]
+ansible_python_interpreter=/usr/bin/python3
+
+[ptp:children]
+master
+slave
+
+[master]
+vm1 ansible_ssh_host=192.168.55.1 ansible_ssh_user=vagrant ansible_ssh_private_key_file=/vagrant/.vagrant/machines/vm1/virtualbox/private_key
+
+[slave]
+vm2 ansible_ssh_host=192.168.55.2 ansible_ssh_user=vagrant ansible_ssh_private_key_file=/vagrant/.vagrant/machines/vm2/virtualbox/private_key
+vm3 ansible_ssh_host=192.168.55.3 ansible_ssh_user=vagrant ansible_ssh_private_key_file=/vagrant/.vagrant/machines/vm3/virtualbox/private_key
+

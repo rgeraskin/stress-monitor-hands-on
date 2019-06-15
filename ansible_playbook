@@ -1,0 +1,141 @@
+---
+- hosts: ptp
+  tasks:
+    - name: Installs python3-numpy, zabbix-agent, linuxptp
+      become: yes
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: true
+      vars:
+        packages:
+        - python3-numpy
+        - zabbix-agent
+        - linuxptp
+
+    - name: Find interface name
+      set_fact:
+        target_interface: "{{ item }}"
+      when: >
+        (hostvars[inventory_hostname]['ansible_%s' % item]|default({}))
+        .get('ipv4', {}).get('broadcast') == "192.168.55.255"
+      with_items:
+        - "{{ ansible_interfaces }}"
+
+    - name: Change interface ptp4l works on
+      become: yes
+      lineinfile:
+        path: /lib/systemd/system/ptp4l.service
+        regexp: '^ExecStart'
+        line: ExecStart=/usr/sbin/ptp4l -f /etc/linuxptp/ptp4l.conf -i {{ target_interface }}
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - Reload systemctrl daemons
+
+    - name: Change ptp4l time_stamping setting to software
+      become: yes
+      lineinfile:
+        path: /etc/linuxptp/ptp4l.conf
+        regexp: '^time_stamping'
+        line: time_stamping		software
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - Restart ptp4l daemon
+
+  handlers:
+    - name: Reload systemctrl daemons
+      become: yes
+      command: systemctl daemon-reload
+
+    - name: Restart ptp4l daemon
+      become: yes
+      service: name=ptp4l enabled=yes state=restarted
+
+- hosts: slave
+  tasks:
+    - name: Installs iperf
+      become: yes
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: true
+      vars:
+        packages:
+        - iperf
+
+    - name: Change ptp4l slaveOnly setting to 1
+      become: yes
+      lineinfile:
+        path: /etc/linuxptp/ptp4l.conf
+        regexp: '^slaveOnly'
+        line: slaveOnly		1
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - Restart ptp4l daemon
+  handlers:
+    - name: Restart ptp4l daemon
+      become: yes
+      service: name=ptp4l enabled=yes state=restarted
+
+- hosts: vm3
+  tasks:
+    - name: Installs build-essential, checkinstall
+      become: yes
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: true
+      vars:
+        packages:
+        - build-essential
+        - checkinstall
+
+    - name: git clone throttle
+      git:
+        repo: 'https://github.com/xorgy/throttle.git'
+        dest: /vagrant/throttle
+
+    - name: configure throttle
+      shell: ./configure
+      args:
+        chdir: /vagrant/throttle
+
+    - name: make throttle
+      shell: cd /vagrant/throttle; make
+      args:
+        chdir: /vagrant/throttle
+        
+    - name: checkinstall throttle
+      become: yes
+      shell: checkinstall -y
+      args:
+        chdir: /vagrant/throttle
+
+- hosts: vm2
+  tasks:
+    - name: Installs stress-ng
+      become: yes
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: true
+      vars:
+        packages:
+        - stress-ng
+
+- hosts: slave
+  tasks:
+    - name: Start stress
+      shell: nohup /vagrant/stress.py </dev/null >/dev/null 2>&1 &
+      
+- hosts: ptp
+  tasks:
+    - name: Start monitor
+      shell: nohup sudo nice -n -20 /vagrant/monitor.py </dev/null >/dev/null 2>&1 &
+
